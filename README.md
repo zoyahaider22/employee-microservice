@@ -1,39 +1,109 @@
 # Employee Management API
 
-A backend Employee Management API built with **Python, FastAPI, Pydantic, and SQLite**.
+A RESTful microservice for managing employee data, built with **FastAPI** and **SQLite**, using a layered architecture (router → controller → repository → model).
 
-This project provides APIs to manage employee records through CRUD operations, including adding, retrieving, modifying, and deleting employees. It also includes request validation, duplicate record checks, and automatic creation/update timestamps.
+## Features
 
-## 🚀 Features
+- Add, modify, and delete employee records
+- Fetch a single employee or the full list
+- Automatic validation of incoming data (via Pydantic)
+- Enforced uniqueness on email and Aadhar number
+- Automatic `created_at` / `updated_at` timestamp tracking
 
-- Add new employees
-- Retrieve all employees
-- Retrieve an employee by ID
-- Modify employee information
-- Delete employees
-- Email validation using Pydantic
-- Duplicate email validation
-- Duplicate Aadhar number validation
-- Employee status management
-- Automatic `created_at` and `updated_at` timestamps
-- SQLite database integration
-- Interactive API documentation with Swagger UI
+## Tech Stack
 
-## 🛠️ Technologies Used
+- **FastAPI** — web framework
+- **SQLite** — database (single file, no separate server required)
+- **Pydantic** — request validation
 
-- **Python**
-- **FastAPI**
-- **Pydantic**
-- **SQLite**
-- **Uvicorn**
-- **REST API**
+## Architecture
 
-## 📁 Project Structure
+This project is split into layers, each with a single responsibility:
 
-```text
-employee-microservice/
-│
-├── main.py
-├── requirements.txt
-├── .gitignore
-└── README.md
+```
+Client
+  │
+  ▼
+employee_router.py        → maps API endpoints to controller functions
+  │
+  ▼
+employee_controller.py    → business logic (duplicate checks, existence checks)
+  │
+  ▼
+employee_repository.py    → the only file that talks to the database
+  │
+  ▼
+employee.db (SQLite)
+```
+
+| File | Responsibility |
+|---|---|
+| `employee_model.py` | Defines request shapes (`AddReq`, `ModifyReq`, `DeleteReq`) using Pydantic |
+| `employee_repository.py` | All direct database access (SQL queries) |
+| `employee_controller.py` | Business logic — decides what should happen, calls the repository |
+| `employee_router.py` | Thin layer — maps HTTP endpoints to controller functions |
+| `main.py` | Starts the app and wires the router in |
+
+This separation means the database can be swapped out by only changing `employee_repository.py`, without touching the API logic or endpoints at all.
+
+## Employee Fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `employee_id` | int | Auto-generated, unique |
+| `email` | string | Unique |
+| `name` | string | |
+| `age` | int | |
+| `address` | string | |
+| `aadhar_number` | string | Unique |
+| `status` | string | `active` or `inactive` |
+| `created_at` | string | Set once, on creation |
+| `updated_at` | string | Refreshed on every modify |
+
+## API Endpoints
+
+All write operations use `POST`, as specified for this assignment.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/add` | Add a new employee |
+| `POST` | `/modify` | Update an existing employee (only send fields you want to change) |
+| `POST` | `/delete` | Delete an employee by ID |
+| `GET` | `/employees` | List all employees |
+| `GET` | `/employees/{employee_id}` | Get a single employee by ID |
+
+### Example: Add an employee
+```json
+POST /add
+{
+  "email": "rahul@example.com",
+  "name": "Rahul",
+  "age": 24,
+  "address": "Delhi",
+  "aadhar_number": "123412341234",
+  "status": "active"
+}
+```
+
+### Example: Modify one field
+```json
+POST /modify
+{
+  "employee_id": 1,
+  "status": "inactive"
+}
+```
+Only the fields you send are updated — everything else stays unchanged.
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8001
+```
+
+Then open `http://localhost:8001/docs` for interactive API documentation and testing.
+
+## Author
+
+Zoya Haider 
