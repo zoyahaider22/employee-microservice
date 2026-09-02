@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from employee_model import AddReq, ModifyReq, DeleteReq
 import employee_repository as repo
+import rabbitmq_publisher
 
 
 def add_employee_controller(e: AddReq):
@@ -10,6 +11,9 @@ def add_employee_controller(e: AddReq):
         raise HTTPException(400, "Aadhar number already exists")
 
     new_id = repo.add_employee(e.email, e.name, e.age, e.address, e.aadhar_number, e.status)
+
+    rabbitmq_publisher.publish_employee_id(new_id)  # tell RabbitMQ about the new employee
+
     return {"message": "Employee added", "employee_id": new_id}
 
 
