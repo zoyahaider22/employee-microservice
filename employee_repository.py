@@ -27,6 +27,7 @@ def init_db():
 
     try:
         conn = get_connection()
+        conn.execute("PRAGMA foreign_keys = ON")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS employees (
@@ -37,8 +38,31 @@ def init_db():
                 address TEXT NOT NULL,
                 aadhar_number TEXT UNIQUE NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
+                date_of_joining TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            )
+        """)
+
+        # migration: adds the column if this employees table already
+        # existed before date_of_joining was introduced
+        try:
+            conn.execute("ALTER TABLE employees ADD COLUMN date_of_joining TEXT")
+            logger.info("Added date_of_joining column to employees table")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS leaves (
+                leave_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                financial_year TEXT NOT NULL,
+                sick_leave INTEGER NOT NULL DEFAULT 12,
+                casual_leave INTEGER NOT NULL DEFAULT 12,
+                sick_leave_taken INTEGER NOT NULL DEFAULT 0,
+                casual_leave_taken INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (employee_id) REFERENCES employees(employee_id),
+                UNIQUE(employee_id, financial_year)
             )
         """)
 
@@ -104,75 +128,38 @@ def aadhar_exists(aadhar_number: str) -> bool:
 
 
 def add_employee(
-    email,
-    name,
-    age,
-    address,
-    aadhar_number,
-    status
+    email, name, age, address, aadhar_number, status,
+    date_of_joining=None
 ) -> int:
-
     conn = None
-
     try:
         now = datetime.utcnow().isoformat()
-
         conn = get_connection()
 
         cur = conn.execute(
             """
             INSERT INTO employees
-            (
-                email,
-                name,
-                age,
-                address,
-                aadhar_number,
-                status,
-                created_at,
-                updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (email, name, age, address, aadhar_number, status,
+             date_of_joining, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                email,
-                name,
-                age,
-                address,
-                aadhar_number,
-                status,
-                now,
-                now
-            ),
+            (email, name, age, address, aadhar_number, status,
+             date_of_joining, now, now),
         )
-
         conn.commit()
-
         new_id = cur.lastrowid
-
-        logger.info(
-            "Employee %s inserted into database",
-            new_id
-        )
-
+        logger.info("Employee %s inserted into database", new_id)
         return new_id
 
     except sqlite3.IntegrityError:
-        logger.exception(
-            "Database integrity error while adding employee"
-        )
+        logger.exception("Database integrity error while adding employee")
         raise
-
     except sqlite3.Error:
-        logger.exception(
-            "Database error while adding employee"
-        )
+        logger.exception("Database error while adding employee")
         raise
-
     finally:
         if conn is not None:
             conn.close()
-
 
 def get_employee(employee_id: int):
     conn = None
@@ -240,40 +227,22 @@ def get_all_employees():
 
 
 def update_employee(
-    employee_id,
-    email,
-    name,
-    age,
-    address,
-    aadhar_number,
-    status
+    employee_id, email, name, age, address, aadhar_number, status,
+    date_of_joining=None
 ) -> bool:
-
     conn = None
-
     try:
         existing = get_employee(employee_id)
-
         if not existing:
-            logger.warning(
-                "Employee %s not found for update",
-                employee_id
-            )
+            logger.warning("Employee %s not found for update", employee_id)
             return False
 
         conn = get_connection()
-
         conn.execute(
             """
             UPDATE employees
-            SET
-                email=?,
-                name=?,
-                age=?,
-                address=?,
-                aadhar_number=?,
-                status=?,
-                updated_at=?
+            SET email=?, name=?, age=?, address=?, aadhar_number=?,
+                status=?, date_of_joining=?, updated_at=?
             WHERE employee_id=?
             """,
             (
@@ -283,34 +252,21 @@ def update_employee(
                 address or existing["address"],
                 aadhar_number or existing["aadhar_number"],
                 status or existing["status"],
+                date_of_joining or existing["date_of_joining"],
                 datetime.utcnow().isoformat(),
                 employee_id,
             ),
         )
-
         conn.commit()
-
-        logger.info(
-            "Employee %s updated in database",
-            employee_id
-        )
-
+        logger.info("Employee %s updated in database", employee_id)
         return True
 
     except sqlite3.IntegrityError:
-        logger.exception(
-            "Database integrity error while updating employee %s",
-            employee_id
-        )
+        logger.exception("Database integrity error while updating employee %s", employee_id)
         raise
-
     except sqlite3.Error:
-        logger.exception(
-            "Database error while updating employee %s",
-            employee_id
-        )
+        logger.exception("Database error while updating employee %s", employee_id)
         raise
-
     finally:
         if conn is not None:
             conn.close()
@@ -350,6 +306,110 @@ def delete_employee(employee_id: int) -> bool:
         )
         raise
 
+    finally:
+        if conn is not None:
+            conn.close()
+
+def add_leave(
+    employee_id, financial_year,
+    sick_leave=12, casual_leave=12,
+    sick_leave_taken=0, casual_leave_taken=0
+) -> int:
+    conn = None
+    try:
+        conn = get_connection()
+        conn.execute("PRAGMA foreign_keys = ON")
+
+        cur = conn.execute(
+            """
+            INSERT INTO leaves
+            (employee_id, financial_year, sick_leave, casual_leave,
+             sick_leave_taken, casual_leave_taken)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (employee_id, financial_year, sick_leave, casual_leave,
+             sick_leave_taken, casual_leave_taken),
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+        logger.info(
+            "Leave record %s created for employee %s (FY %s)",
+            new_id, employee_id, financial_year
+        )
+        return new_id
+
+    except sqlite3.IntegrityError:
+        logger.exception(
+            "Database integrity error while adding leave for employee %s",
+            employee_id
+        )
+        raise
+    except sqlite3.Error:
+        logger.exception(
+            "Database error while adding leave for employee %s", employee_id
+        )
+        raise
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def get_employee_with_leaves(employee_id: int):
+    """
+    LEFT OUTER JOIN: employee is returned even with zero leave
+    records (leave fields come back as null). Returns None only
+    if the employee_id itself doesn't exist.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+
+        rows = conn.execute(
+            """
+            SELECT
+                e.employee_id, e.name, e.email, e.date_of_joining,
+                l.financial_year, l.sick_leave, l.casual_leave,
+                l.sick_leave_taken, l.casual_leave_taken
+            FROM employees e
+            LEFT JOIN leaves l ON e.employee_id = l.employee_id
+            WHERE e.employee_id = ?
+            """,
+            (employee_id,)
+        ).fetchall()
+
+        if not rows:
+            logger.warning("Employee %s not found for leave lookup", employee_id)
+            return None
+
+        result = {
+            "employee_id": rows[0]["employee_id"],
+            "name": rows[0]["name"],
+            "email": rows[0]["email"],
+            "date_of_joining": rows[0]["date_of_joining"],
+            "leaves": []
+        }
+
+        for row in rows:
+            if row["financial_year"] is not None:
+                result["leaves"].append({
+                    "financial_year": row["financial_year"],
+                    "sick_leave": row["sick_leave"],
+                    "casual_leave": row["casual_leave"],
+                    "sick_leave_taken": row["sick_leave_taken"],
+                    "casual_leave_taken": row["casual_leave_taken"],
+                })
+
+        logger.info(
+            "Retrieved leave details for employee %s (%s records)",
+            employee_id, len(result["leaves"])
+        )
+        return result
+
+    except sqlite3.Error:
+        logger.exception(
+            "Database error while retrieving leaves for employee %s", employee_id
+        )
+        raise
     finally:
         if conn is not None:
             conn.close()

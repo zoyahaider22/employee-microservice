@@ -4,6 +4,8 @@ import logging
 from employee_model import AddReq, ModifyReq, DeleteReq
 import employee_repository as repo
 import rabbitmq_publisher
+from employee_model import AddReq, ModifyReq, DeleteReq, AddLeaveReq
+import sqlite3
 
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,8 @@ def add_employee_controller(e: AddReq):
             e.age,
             e.address,
             e.aadhar_number,
-            e.status
+            e.status,
+            e.date_of_joining
         )
 
         logger.info("Employee %s added successfully", new_id)
@@ -64,7 +67,8 @@ def modify_employee_controller(e: ModifyReq):
             e.age,
             e.address,
             e.aadhar_number,
-            e.status
+            e.status,
+            e.date_of_joining
         )
 
         if not success:
@@ -176,3 +180,45 @@ def get_all_employees_controller():
             status_code=500,
             detail="Failed to retrieve employees"
         )
+
+def add_leave_controller(l: AddLeaveReq):
+    try:
+        if not repo.get_employee(l.employee_id):
+            logger.warning("Attempt to add leave for nonexistent employee %s", l.employee_id)
+            raise HTTPException(404, "Employee not found")
+
+        new_id = repo.add_leave(
+            l.employee_id, l.financial_year, l.sick_leave, l.casual_leave,
+            l.sick_leave_taken, l.casual_leave_taken
+        )
+        logger.info("Leave record %s added for employee %s", new_id, l.employee_id)
+        return {"message": "Leave record added", "leave_id": new_id}
+
+    except HTTPException:
+        raise
+    except sqlite3.IntegrityError:
+        logger.warning(
+            "Leave record already exists for employee %s in FY %s",
+            l.employee_id, l.financial_year
+        )
+        raise HTTPException(400, "Leave record already exists for this employee and financial year")
+    except Exception:
+        logger.exception("Unexpected error while adding leave for employee %s", l.employee_id)
+        raise HTTPException(500, "Failed to add leave record")
+
+
+def get_employee_leaves_controller(employee_id: int):
+    try:
+        data = repo.get_employee_with_leaves(employee_id)
+        if not data:
+            logger.warning("Employee %s not found", employee_id)
+            raise HTTPException(404, "Employee not found")
+
+        logger.info("Leave details retrieved for employee %s", employee_id)
+        return data
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Unexpected error while retrieving leaves for employee %s", employee_id)
+        raise HTTPException(500, "Failed to retrieve leave details")    

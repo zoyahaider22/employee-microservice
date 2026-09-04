@@ -9,6 +9,7 @@ class AddReq(BaseModel):
     address: str
     aadhar_number: str
     status: str = "active"
+    date_of_joining: Optional[str] = None   # format: "YYYY-MM-DD"
 
 
 class ModifyReq(BaseModel):
@@ -19,7 +20,17 @@ class ModifyReq(BaseModel):
     address: Optional[str] = None
     aadhar_number: Optional[str] = None
     status: Optional[str] = None
+    date_of_joining: Optional[str] = None
 
 
 class DeleteReq(BaseModel):
     employee_id: int
+
+
+class AddLeaveReq(BaseModel):
+    employee_id: int
+    financial_year: str          # e.g. "2025-2026"
+    sick_leave: int = 12
+    casual_leave: int = 12
+    sick_leave_taken: int = 0
+    casual_leave_taken: int = 0
